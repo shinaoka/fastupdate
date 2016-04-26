@@ -1,62 +1,54 @@
 #include "unittest.hpp"
 
+
 TEST(FastUpdate, BlockMatrixAdd)
 {
-    typedef double Scalar;
-    std::vector<size_t> N_list, M_list;
-    N_list.push_back(0);
-    N_list.push_back(10);
-    M_list.push_back(10);
-    M_list.push_back(20);
+  typedef double Scalar;
+  std::vector<size_t> N_list, M_list;
+  N_list.push_back(0);
+  N_list.push_back(10);
+  N_list.push_back(2);
 
-    for (size_t n=0; n<N_list.size(); ++n) {
-        for (size_t m=0; m<M_list.size(); ++m) {
-            const size_t N = N_list[n];
-            const size_t M = M_list[m];
+  M_list.push_back(10);
+  M_list.push_back(20);
+  M_list.push_back(4);
 
-            //typedef alps::numeric::matrix<double> matrix_t;
-            typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> matrix_t;
+  for (size_t n=0; n<N_list.size(); ++n) {
+    for (size_t m=0; m<M_list.size(); ++m) {
+      const size_t N = N_list[n];
+      const size_t M = M_list[m];
 
-            matrix_t A(N,N,0), B(N,M,0), C(M,N,0), D(M,M,0), invA(N,N,0);
-            matrix_t E(N,N,0), F(N,M,0), G(M,N,0), H(M,M,0);
-            matrix_t BigMatrix(N+M, N+M, 0);
-            matrix_t invBigMatrix2(N+M, N+M, 0);
+      typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> matrix_t;
 
-            randomize_matrix(A, 100);//100 is a seed
-            randomize_matrix(B, 200);
-            randomize_matrix(C, 300);
-            randomize_matrix(D, 400);
-            if (N>0) {
-                invA = inverse(A);
-            } else {
-                invA.resize(0,0);
-            }
+      matrix_t A(N,N), B(N,M), C(M,N), D(M,M);
+      matrix_t E(N,N), F(N,M), G(M,N), H(M,M);
+      alps::ResizableMatrix<Scalar> invA(N,N), BigMatrix(N+M, N+M, 0);//, invBigMatrix2(N+M, N+M, 0);
 
-            copy_block(A,0,0,BigMatrix,0,0,N,N);
-            copy_block(B,0,0,BigMatrix,0,N,N,M);
-            copy_block(C,0,0,BigMatrix,N,0,M,N);
-            copy_block(D,0,0,BigMatrix,N,N,M,M);
+      randomize_matrix(A, 100);//100 is a seed
+      randomize_matrix(B, 200);
+      randomize_matrix(C, 300);
+      randomize_matrix(D, 400);
+      if (N>0) {
+        invA = A.inverse();
+      } else {
+        invA.destructive_resize(0,0);
+      }
 
-            matrix_t invBigMatrix(BigMatrix.inverse());
+      copy_block(A,0,0,BigMatrix,0,0,N,N);
+      copy_block(B,0,0,BigMatrix,0,N,N,M);
+      copy_block(C,0,0,BigMatrix,N,0,M,N);
+      copy_block(D,0,0,BigMatrix,N,N,M,M);
 
-            double det_rat = compute_inverse_matrix_up(B, C, D, invA, E, F, G, H);
-            ASSERT_TRUE(std::abs(det_rat-determinant(BigMatrix)/determinant(A))<1E-8) << "N=" << N << " M=" << M;
+      const Scalar det_rat = compute_det_ratio_up<Scalar>(B, C, D, invA);
+      ASSERT_TRUE(std::abs(det_rat-determinant(BigMatrix)/A.determinant())<1E-8)
+                << "N=" << N << " M=" << M << " " << std::abs(det_rat-determinant(BigMatrix)) << "/" << std::abs(det_rat)<<"="
+                << std::abs(det_rat-determinant(BigMatrix)/A.determinant());
 
-            copy_block(E,0,0,invBigMatrix2,0,0,N,N);
-            copy_block(F,0,0,invBigMatrix2,0,N,N,M);
-            copy_block(G,0,0,invBigMatrix2,N,0,M,N);
-            copy_block(H,0,0,invBigMatrix2,N,N,M,M);
-
-            ASSERT_TRUE(std::abs(det_rat-determinant(BigMatrix)/determinant(A))) << "N=" << N << " M=" << M;
-            ASSERT_TRUE(alps::numeric::norm_square(invBigMatrix-invBigMatrix2)<1E-8);
-
-            det_rat = compute_det_ratio_up(B, C, D, invA);
-            ASSERT_TRUE(std::abs(det_rat-determinant(BigMatrix)/determinant(A))<1E-8) << "N=" << N << " M=" << M;
-
-            det_rat = compute_inverse_matrix_up2(B, C, D, invA, invBigMatrix2);
-            ASSERT_TRUE(norm_square(invBigMatrix-invBigMatrix2)<1E-8) << "N=" << N << " M=" << M;
-        }
+      const Scalar det_rat2 = compute_inverse_matrix_up(B, C, D, invA);
+      ASSERT_TRUE(std::abs(det_rat-det_rat2)<1E-8) << "N=" << N << " M=" << M;
+      ASSERT_TRUE(norm_square(inverse(BigMatrix)-invA)<1E-8) << "N=" << N << " M=" << M;
     }
+  }
 }
 
 /*
@@ -578,70 +570,70 @@ TEST(SubmatrixUpdate, single_vertex_insertion_spin_flip)
     itime_vertex_container itime_vertices_init;
     itime_vertices_init.push_back(itime_vertex(0, 0, 0.5*beta, 2, true));
 
-    /* initialize submatrix_update */
-    //SubmatrixUpdate<T> submatrix_update(k_ins_max, n_flavors, DiagonalG0<T>(beta), &Uijkl, beta, itime_vertices_init);
-    SubmatrixUpdate<T> submatrix_update(k_ins_max, n_flavors, OffDiagonalG0<T>(beta, n_sites, E, phase), &Uijkl, beta, itime_vertices_init);
+    // initialize submatrix_update
+//SubmatrixUpdate<T> submatrix_update(k_ins_max, n_flavors, DiagonalG0<T>(beta), &Uijkl, beta, itime_vertices_init);
+SubmatrixUpdate<T> submatrix_update(k_ins_max, n_flavors, OffDiagonalG0<T>(beta, n_sites, E, phase), &Uijkl, beta, itime_vertices_init);
 
-    submatrix_update.sanity_check();
+submatrix_update.sanity_check();
 
-    /* init udpate_manager */
-    alps::params params;
-    params["BETA"] = beta;
-    params["FLAVORS"] = n_flavors;
-    params["N_MULTI_VERTEX_UPDATE"] = Nv_max;
-    params["DOUBLE_VERTEX_UPDATE_A"] = 1.0/beta;
-    params["DOUBLE_VERTEX_UPDATE_B"] = 1.0e-2;
-    VertexUpdateManager<T> manager(params, Uijkl, OffDiagonalG0<T>(beta, n_sites, E, phase), false);
+// init udpate_manager
+alps::params params;
+params["BETA"] = beta;
+params["FLAVORS"] = n_flavors;
+params["N_MULTI_VERTEX_UPDATE"] = Nv_max;
+params["DOUBLE_VERTEX_UPDATE_A"] = 1.0/beta;
+params["DOUBLE_VERTEX_UPDATE_B"] = 1.0e-2;
+VertexUpdateManager<T> manager(params, Uijkl, OffDiagonalG0<T>(beta, n_sites, E, phase), false);
 
-    /* initialize RND generator */
-    //std::vector<double> probs(Nv_max, 1.0);
-    boost::random::uniform_smallint<> dist(1,Nv_max);
-    boost::random::uniform_01<> dist01;
-    boost::random::mt19937 gen(seed);
-    boost::random::variate_generator<boost::random::mt19937&, boost::random::uniform_smallint<> > Nv_prob(gen, dist);
-    boost::random::variate_generator<boost::random::mt19937&, boost::random::uniform_01<> > random01(gen, dist01);
+// initialize RND generator
+//std::vector<double> probs(Nv_max, 1.0);
+boost::random::uniform_smallint<> dist(1,Nv_max);
+boost::random::uniform_01<> dist01;
+boost::random::mt19937 gen(seed);
+boost::random::variate_generator<boost::random::mt19937&, boost::random::uniform_smallint<> > Nv_prob(gen, dist);
+boost::random::variate_generator<boost::random::mt19937&, boost::random::uniform_01<> > random01(gen, dist01);
 
-    std::vector<alps::numeric::matrix<T> > M(n_flavors), M_scratch(n_flavors);
+std::vector<alps::numeric::matrix<T> > M(n_flavors), M_scratch(n_flavors);
 
 
-    for (int i_update=0; i_update<n_update; ++i_update) {
-        T sign_from_M0, weight_from_M0;
-        boost::tie(sign_from_M0,weight_from_M0) = submatrix_update.compute_M_from_scratch(M_scratch);
+for (int i_update=0; i_update<n_update; ++i_update) {
+T sign_from_M0, weight_from_M0;
+boost::tie(sign_from_M0,weight_from_M0) = submatrix_update.compute_M_from_scratch(M_scratch);
 
-        //const T weight_rat = submatrix_update.vertex_insertion_removal_update(manager, random01);
-        const T weight_rat = manager.do_ins_rem_update(submatrix_update, Uijkl, random01, 1.0);
-        const T sign_bak = submatrix_update.sign();
+//const T weight_rat = submatrix_update.vertex_insertion_removal_update(manager, random01);
+const T weight_rat = manager.do_ins_rem_update(submatrix_update, Uijkl, random01, 1.0);
+const T sign_bak = submatrix_update.sign();
 
-        ASSERT_TRUE(submatrix_update.sanity_check());
-        submatrix_update.recompute_matrix(true);
-        submatrix_update.compute_M(M);
-        T sign_from_M, weight_from_M;
-        boost::tie(sign_from_M,weight_from_M) = submatrix_update.compute_M_from_scratch(M_scratch);
+ASSERT_TRUE(submatrix_update.sanity_check());
+submatrix_update.recompute_matrix(true);
+submatrix_update.compute_M(M);
+T sign_from_M, weight_from_M;
+boost::tie(sign_from_M,weight_from_M) = submatrix_update.compute_M_from_scratch(M_scratch);
 
-        ASSERT_TRUE(my_equal(weight_from_M/weight_from_M0, weight_rat, 1E-5));
+ASSERT_TRUE(my_equal(weight_from_M/weight_from_M0, weight_rat, 1E-5));
 
-        //std::cout << "sign " << sign_bak << " " << submatrix_update.sign() << std::endl;
-        //std::cout << "sign_from_M " << sign_from_M << std::endl;
-        ASSERT_TRUE(std::abs(sign_bak-submatrix_update.sign())<1.0e-5);
-        ASSERT_TRUE(std::abs(sign_from_M-submatrix_update.sign())<1.0e-5);
-        //std::cout << " Nv " << submatrix_update.itime_vertices().num_interacting() << std::endl;
-        for (int flavor=0; flavor<n_flavors; ++flavor) {
-            if (M[flavor].num_cols()>0) {
-                ASSERT_TRUE(alps::numeric::norm_square(M[flavor]-M_scratch[flavor])/alps::numeric::norm_square(M[flavor])<1E-8);
-            }
-        }
+//std::cout << "sign " << sign_bak << " " << submatrix_update.sign() << std::endl;
+//std::cout << "sign_from_M " << sign_from_M << std::endl;
+ASSERT_TRUE(std::abs(sign_bak-submatrix_update.sign())<1.0e-5);
+ASSERT_TRUE(std::abs(sign_from_M-submatrix_update.sign())<1.0e-5);
+//std::cout << " Nv " << submatrix_update.itime_vertices().num_interacting() << std::endl;
+for (int flavor=0; flavor<n_flavors; ++flavor) {
+if (M[flavor].num_cols()>0) {
+ASSERT_TRUE(alps::numeric::norm_square(M[flavor]-M_scratch[flavor])/alps::numeric::norm_square(M[flavor])<1E-8);
+}
+}
 
-        const T weight_rat2 = manager.do_spin_flip_update(submatrix_update, Uijkl, random01);
+const T weight_rat2 = manager.do_spin_flip_update(submatrix_update, Uijkl, random01);
 
-        T sign_from_M2, weight_from_M2;
-        boost::tie(sign_from_M2,weight_from_M2) = submatrix_update.compute_M_from_scratch(M_scratch);
-        ASSERT_TRUE(my_equal(weight_from_M2/weight_from_M, weight_rat2, 1E-5));
+T sign_from_M2, weight_from_M2;
+boost::tie(sign_from_M2,weight_from_M2) = submatrix_update.compute_M_from_scratch(M_scratch);
+ASSERT_TRUE(my_equal(weight_from_M2/weight_from_M, weight_rat2, 1E-5));
 
-        const T weight_rat3 = manager.do_shift_update(submatrix_update, Uijkl, random01, false);
-    }
+const T weight_rat3 = manager.do_shift_update(submatrix_update, Uijkl, random01, false);
+}
 
-    //std::cout << DiagonalG0<T>(beta)(0.0) << std::endl;
-    //std::cout << DiagonalG0<T>(beta)(0.5*beta) << std::endl;
-    //std::cout << DiagonalG0<T>(beta)(0.9999*beta) << std::endl;
+//std::cout << DiagonalG0<T>(beta)(0.0) << std::endl;
+//std::cout << DiagonalG0<T>(beta)(0.5*beta) << std::endl;
+//std::cout << DiagonalG0<T>(beta)(0.9999*beta) << std::endl;
 }
 */

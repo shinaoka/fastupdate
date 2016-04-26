@@ -1,154 +1,142 @@
 #pragma once
 
-//#include <boost/timer/timer.hpp>
-//#include <alps/numeric/matrix.hpp>
-//#include <alps/numeric/matrix/algorithms.hpp>
-//
-//#include "util.h"
 #include "resizable_matrix.hpp"
 
-//Eigen::Block<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
+template<typename Derived>
+inline int num_cols(const Eigen::MatrixBase<Derived>& m) {
+  return m.cols();
+}
+
+template<typename Derived>
+inline int num_rows(const Eigen::MatrixBase<Derived>& m) {
+  return m.rows();
+}
+
 
 //Implementing equations in Appendix B.1.1 of Luitz's thesis
-template<class T, class MAT>
+template<typename T, typename MAT, typename MAT2>
 T
-compute_det_ratio_up(const MAT &B, const MAT &C, const MAT &D, const alps::ResizableMatrix<T> &invA) {
-    const size_t N = num_rows(invA);
-    const size_t M = num_rows(D);
+compute_det_ratio_up(const MAT &B, const MAT &C, const MAT &D, const MAT2& invA) {
+  const size_t N = num_rows(invA);
+  const size_t M = num_rows(D);
 
-    assert(M>0);
+  assert(M>0);
 
-    assert(num_rows(invA)==num_cols(invA));
-    assert(num_rows(B)==N && num_cols(B)==M);
-    assert(num_rows(C)==M && num_cols(C)==N);
-    assert(num_rows(D)==M && num_cols(D)==M);
+  assert(num_rows(invA)==num_cols(invA));
+  assert(num_rows(B)==N && num_cols(B)==M);
+  assert(num_rows(C)==M && num_cols(C)==N);
+  assert(num_rows(D)==M && num_cols(D)==M);
 
-    if (N==0) {
-        return safe_determinant(D);
-    } else {
-        //compute H
-        return safe_determinant(D-C*invA.block()*B);
-    }
-}
-
-template<class T, class MAT>
-T
-compute_inverse_matrix_up(
-        const MAT &B, const MAT &C, const MAT &D,
-        const alps::ResizableMatrix<T> &invA,
-        MAT &E, MAT &F, MAT &G, MAT &H) {
-    //typedef alps::ResizableMatrix<T> matrix_t;
-
-    typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
-
-    const size_t N = num_rows(invA);
-    const size_t M = num_rows(D);
-
-    assert(M>0);
-
-    assert(num_rows(invA)==num_cols(invA));
-    assert(num_rows(B)==N && num_cols(B)==M);
-    assert(num_rows(C)==M && num_cols(C)==N);
-    assert(num_rows(D)==M && num_cols(D)==M);
-
+  if (N==0) {
+    return D.determinant();
+  } else {
     //compute H
-    if (N==0) {
-        H = safe_inverse(D);
-        E.resize(0,0);
-        F.resize(0,M);
-        G.resize(M,0);
-
-        return 1./safe_determinant(H);
-    } else {
-        //compute H
-        const eigen_matrix_t C_invA = C*invA.block();
-        H = safe_inverse(D - C_invA*B);
-
-        //compute G
-        G = -H*C_invA;
-
-        //compute F
-        const eigen_matrix_t invA_B = invA.block()*B;
-        F = -invA_B*H;
-
-        //compute E
-        E = invA.block()-invA_B*G;
-
-        return 1./safe_determinant(H);
-    }
+    return (D-C*invA.block()*B).determinant();
+  }
 }
+
+/*
+template<typename ReturnType, typename Derived>
+ReturnType
+compute_inverse_matrix_up(
+  const Eigen::MatrixBase<Derived> &B,
+  const Eigen::MatrixBase<Derived> &C,
+  const Eigen::MatrixBase<Derived> &D,
+  const Eigen::MatrixBase<Derived> &invA,
+  Eigen::MatrixBase<Derived> &E,
+  Eigen::MatrixBase<Derived> &F,
+  Eigen::MatrixBase<Derived> &G,
+  Eigen::MatrixBase<Derived> &H) {
+
+  typedef ReturnType Scalar;
+  typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> eigen_matrix_t;
+
+  const size_t N = num_rows(invA);
+  const size_t M = num_rows(D);
+
+  assert(M>0);
+
+  assert(num_rows(invA)==num_cols(invA));
+  assert(num_rows(B)==N && num_cols(B)==M);
+  assert(num_rows(C)==M && num_cols(C)==N);
+  assert(num_rows(D)==M && num_cols(D)==M);
+
+  //compute H
+  if (N==0) {
+    H = D.inverse();
+    E.resize(0,0);
+    F.resize(0,M);
+    G.resize(M,0);
+
+    return 1./H.determinant();
+  } else {
+    //compute H
+    const eigen_matrix_t C_invA = C*invA;
+    H = (D - C_invA*B).inverse();
+
+    //compute G
+    G = -H*C_invA;
+
+    //compute F
+    const eigen_matrix_t invA_B = invA*B;
+    F = -invA_B*H;
+
+    //compute E
+    E = invA-invA_B*G;
+
+    return 1./H.determinant();
+  }
+}
+*/
 
 //Note: invA and invBigMat can point to the same matrix object.
 // invBigMat is resized automatically.
-template<class T, class MAT>
+template<typename T, typename Derived>
 T
-compute_inverse_matrix_up2(
-        const MAT &B, const MAT &C, const MAT &D,
-        const alps::ResizableMatrix<T> &invA,
-        alps::ResizableMatrix<T> &invBigMat) {
-    //using namespace alps::numeric;
-    //typedef matrix<T> matrix_t;
-    typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
-    typedef Eigen::Block<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> > block_t;
+compute_inverse_matrix_up(
+  const Eigen::MatrixBase<Derived> &B,
+  const Eigen::MatrixBase<Derived> &C,
+  const Eigen::MatrixBase<Derived> &D,
+  alps::ResizableMatrix<T> &invA)
+{
+  typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
+  typedef Eigen::Block<eigen_matrix_t> block_t;
 
-    const int N = num_rows(invA);
-    const int M = num_rows(D);
+  const int N = num_rows(invA);
+  const int M = num_rows(D);
 
-    assert(M>0);
+  assert(M>0);
 
-    assert(num_rows(invA)==num_cols(invA));
-    assert(num_rows(B)==N && num_cols(B)==M);
-    assert(num_rows(C)==M && num_cols(C)==N);
-    assert(num_rows(D)==M && num_cols(D)==M);
+  assert(num_rows(invA)==num_cols(invA));
+  assert(num_rows(B)==N && num_cols(B)==M);
+  assert(num_rows(C)==M && num_cols(C)==N);
+  assert(num_rows(D)==M && num_cols(D)==M);
 
-    if (N==0) {
-        invBigMat = D.inverse();
-        return safe_determinant(D);
-    } else {
-        //static matrix_t H, C_invA, C_invA_B, invA_B, F;
-        //H.destructive_resize(M, M);
-        //C_invA.destructive_resize(M, N);
-        //C_invA_B.destructive_resize(M, M);
-        //invA_B.destructive_resize(N, M);
-        //F.destructive_resize(N,M);
+  if (N==0) {
+    invA = D.inverse();
+    return D.determinant();
+  } else {
+    //compute H
+    const eigen_matrix_t C_invA = C*invA.block();
+    const eigen_matrix_t H = (D-C_invA*B).inverse();
 
-        //compute H
-        //gemm(C, invA, C_invA);
-        //gemm(C_invA, B, C_invA_B);
-        //H = safe_inverse(D - C_invA_B);
-        const eigen_matrix_t C_invA = C*invA;
-        const eigen_matrix_t H = (D-C_invA*B).invert();
+    //compute F
+    const eigen_matrix_t invA_B = invA.block()*B;
+    const eigen_matrix_t F = -invA_B*H;
 
-        //compute F
-        //gemm(invA, B, invA_B);
-        //mygemm((T)-1.0, invA_B, H, (T)0.0, F);
-        const eigen_matrix_t invA_B = invA*B;
-        const eigen_matrix_t F = -invA_B*H;
+    invA.conservative_resize(N+M,N+M);//this keep the contents of invA
 
-        //submatrix views to invBigMat
-        invBigMat.destructive_resize(N + M, N + M);//this may destroy the contents of invA as well
-        //submatrix_view<T> E_view(invBigMat, 0, 0, N, N);
-        //submatrix_view<T> G_view(invBigMat, N, 0, M, N);
-        block_t E_view = invBigMat.block(0, 0, N, N);
-        block_t G_view = invBigMat.block(N, 0, M, N);
+    //compute G
+    invA.block(N,0,M,N) = -H*C_invA;
 
-        //compute G
-        //mygemm((T)-1.0, H, C_invA, (T)0.0, G_view);
-        G_view = -H*C_invA;
+    //compute E
+    invA.block(0,0,N,N) -= invA_B*invA.block(N,0,M,N);
 
-        //compute E
-        //my_copy_block(invA,0,0,E_view,0,0,N,N);
-        //mygemm(static_cast<T>(-1.0), invA_B, G_view, static_cast<T>(1.0), E_view);
-        E_view = -invA_B*G_view + invA.block(0,0,N,N);
+    invA.block(0,N,N,M) = F;
+    invA.block(N,N,M,M) = H;
 
-        //copy_block(H, 0, 0, invBigMat, N, N, M, M);
-        //copy_block(F, 0, 0, invBigMat, 0, N, N, M);
-        //Can we remove this memory copy?
-        invBigMat.block(N,N,M,M) = H;
-        invBigMat.block(0,N,N,M) = F;
-
-        return 1./safe_determinant(H);
-    }
+    return 1./H.determinant();
+  }
 }
 
 

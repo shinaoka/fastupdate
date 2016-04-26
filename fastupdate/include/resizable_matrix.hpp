@@ -8,8 +8,6 @@
  */
 #pragma once
 
-#include<boost/scoped_ptr.hpp>
-
 #include<Eigen/Dense>
 #include<Eigen/LU>
 
@@ -22,72 +20,59 @@ namespace alps {
   public:
     typedef Scalar type;
 
-    /**
-     * Default constructor
-     */
-    ResizableMatrix() : size1_(-1), size2_(-1), values_(0) {}
-
-
     ResizableMatrix(int size1, int size2) :
-      values_(new eigen_matrix_t(size1, size2)),
       size1_(size1),
-      size2_(size2)
+      size2_(size2),
+      values_(size1, size2)
     {
       assert(size1>=0 && size2>=0);
     }
 
-    /**
-     * @brief Constructor with initial value
-     * @param size1 number of rows
-     * @param size2 number of columns
-     * @param value initial value
-     */
     ResizableMatrix(int size1, int size2, Scalar initial_value) :
-      values_(new eigen_matrix_t(size1, size2)),
       size1_(size1),
-      size2_(size2)
+      size2_(size2),
+      values_(size1, size2)
     {
       assert(size1>=0 && size2>=0);
-      if (size1*size2>0) {
-        values_->fill(initial_value);
-      }
+      values_.fill(initial_value);
     }
+
+    ResizableMatrix() : size1_(-1), size2_(-1), values_(0,0) {}
 
     ResizableMatrix(const ResizableMatrix<Scalar> &M) {
       if(M.is_allocated()) {
         size1_ = M.size1_;
         size2_ = M.size2_;
-        values_.reset(new eigen_matrix_t(*M.values_));
+        values_ = M.values_;
       } else {
         size1_ = -1;
         size2_ = -1;
-        values_.reset(0);
       }
     }
 
     inline bool is_allocated() const {
-      return values_.get()!=0;
+      return size1_>=0 && size2_>=0;
     }
 
     inline Scalar& operator()(const int i, const int j) {
       assert(is_allocated());
       assert(i<=size1_);
       assert(j<=size2_);
-      return values_->operator()(i,j);
+      return values_(i,j);
     }
 
     inline const Scalar& operator()(const int i, const int j) const {
       assert(is_allocated());
       assert(i<=size1_);
       assert(j<=size2_);
-      return values_->operator()(i,j);
+      return values_(i,j);
     }
 
     //ResizableMatrix size
     inline int size1() const {assert(is_allocated()); return size1_;}
     inline int size2() const {assert(is_allocated()); return size2_;}
-    inline int memory_size1() const {assert(is_allocated()); return values_->rows();}
-    inline int memory_size2() const {assert(is_allocated()); return values_->cols();}
+    inline int memory_size1() const {assert(is_allocated()); return values_.rows();}
+    inline int memory_size2() const {assert(is_allocated()); return values_.cols();}
 
     /*
     inline void getrow(int k, double *row) const{
@@ -114,11 +99,11 @@ namespace alps {
     //In this case, we allocate bit larger memory for avoid further memory allocation.
     inline void conservative_resize(int size1, int size2) {
       if (!is_allocated()) {
-        values_.reset(new eigen_matrix_t(size1, size2));
+        values_.resize(size1, size2);
       } else {
         //Should we consider cache line length?
         if (size1>memory_size1() || size2>memory_size2()) {
-          values_->conservativeResize(1.2*size1+1, 1.2*size2+1);
+          values_.conservativeResize(1.2*size1+1, 1.2*size2+1);
         }
       }
       size1_ = size1;
@@ -128,10 +113,10 @@ namespace alps {
     //Destructive version of resize()
     inline void destructive_resize(int size1, int size2) {
       if (!is_allocated()) {
-        values_.reset(new eigen_matrix_t(size1, size2));
+        values_.resize(size1, size2);
       } else {
         if (size1>memory_size1() || size2>memory_size2()) {
-          values_->resize(1.2*size1+1, 1.2*size2+1);
+          values_.resize(1.2*size1+1, 1.2*size2+1);
         }
       }
       size1_ = size1;
@@ -166,7 +151,7 @@ namespace alps {
       assert(is_allocated());
       assert(r1<size1_);
       assert(r2<size1_);
-      values_->row(r1).swap(values_->row(r2));
+      values_.row(r1).swap(values_.row(r2));
     }
 
     //swap two columns
@@ -174,7 +159,7 @@ namespace alps {
       assert(is_allocated());
       assert(c1<size2_);
       assert(c2<size2_);
-      values_->col(c1).swap(values_->col(c2));
+      values_.col(c1).swap(values_.col(c2));
     }
 
     //swap two rows and columns
@@ -227,8 +212,16 @@ namespace alps {
       assert(size2_==M2.size2_);
 
       ResizableMatrix Msum(*this);
-      Msum.values_->block(0,0,size1_,size2_) -= M2.values_->block(0,0,size1_,size2_);
+      Msum.values_.block(0,0,size1_,size2_) -= M2.values_.block(0,0,size1_,size2_);
       return Msum;
+    }
+
+    template<typename Derived>
+    inline const ResizableMatrix& operator=(const Eigen::MatrixBase<Derived> &M2) {
+      size1_ = M2.rows();
+      size2_ = M2.cols();
+      values_ = M2;
+      return *this;
     }
 
     /*
@@ -247,14 +240,14 @@ namespace alps {
     inline void swap(ResizableMatrix<Scalar> &M2) throw() {
       std::swap(size1_, M2.size1_);
       std::swap(size2_, M2.size2_);
-      values_.swap(M2.values_); //just exchange smart pointers
+      values_.swap(M2.values_); //I am not sure if it's inexpensive
     }
 
     inline void invert() {
       assert(is_allocated());
       assert(size1_==size2_);
       eigen_matrix_t inv = block().inverse();
-      *values_ = inv;//Should we use std::swap(*values_,inv)?
+      values_ = inv;//Should we use std::swap(*values_,inv)?
     }
 
     inline Scalar trace() {
@@ -265,18 +258,34 @@ namespace alps {
 
     ALPS_STRONG_INLINE
     Eigen::Block<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
+    block(int start_row, int start_col, int rows, int cols) {
+      assert(is_allocated());
+      assert(start_row+rows<=size1());
+      assert(start_col+cols<=size2());
+      return values_.block(start_row, start_col, rows, cols);
+    }
+
+    inline
+    Eigen::Block<const Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
     block(int start_row, int start_col, int rows, int cols) const {
       assert(is_allocated());
       assert(start_row+rows<=size1());
       assert(start_col+cols<=size2());
-      return values_->block(start_row, start_col, rows, cols);
+      return values_.block(start_row, start_col, rows, cols);
     }
 
     ALPS_STRONG_INLINE
     Eigen::Block<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
+    block() {
+      assert(is_allocated());
+      return values_.block(0, 0, size1_, size2_);
+    }
+
+    inline
+    const Eigen::Block<const Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
     block() const {
       assert(is_allocated());
-      return values_->block(0, 0, size1_, size2_);
+      return values_.block(0, 0, size1_, size2_);
     }
 
     //Only for debug and test
@@ -289,7 +298,7 @@ namespace alps {
     typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
 
     int size1_, size2_; //current size of ResizableMatrix
-    boost::scoped_ptr<eigen_matrix_t> values_;
+    eigen_matrix_t values_;
   };
 
   /*
@@ -311,6 +320,68 @@ namespace alps {
   template<typename Scalar>
   std::ostream   &operator<<(std::ostream  &os, const ResizableMatrix<Scalar> &M); //forward declaration
   */
+
+  //some functions for compatibility
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  int num_cols(const alps::ResizableMatrix<Scalar>& m) {
+    return m.size1();
+  }
+
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  int num_rows(const alps::ResizableMatrix<Scalar>& m) {
+    return m.size2();
+  }
+
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  void gemm(const alps::ResizableMatrix<Scalar>& a, const alps::ResizableMatrix<Scalar>& b, alps::ResizableMatrix<Scalar>& c) {
+    c = a*b;
+  }
+
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  alps::ResizableMatrix<Scalar> inverse(const alps::ResizableMatrix<Scalar>& m) {
+    alps::ResizableMatrix<Scalar> inv_m(m);
+    inv_m.invert();
+    return inv_m;
+  }
+
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  Scalar determinant(const alps::ResizableMatrix<Scalar>& m) {
+    return m.determinant();
+  }
+
+  template<typename Scalar>
+  ALPS_STRONG_INLINE
+  Scalar norm_square(const alps::ResizableMatrix<Scalar>& m) {
+    return m.block().squaredNorm();
+  }
+
+  //template<typename Scalar, typename Derived>
+  //ALPS_STRONG_INLINE
+  //Scalar determinant(const Eigen::MatrixBase<Derived>& m) {
+    ////return m.determinant();
+  //}
+
+  template<typename M1, typename M2>
+  ALPS_STRONG_INLINE
+  void copy_block(const M1& src, int start_row_src, int start_col_src,
+             M2& dst, int start_row_dst, int start_col_dst,
+             int num_rows_block, int num_cols_block) {
+    dst.block(start_row_dst, start_col_dst, num_rows_block, num_cols_block)
+      = src.block(start_row_src, start_col_src, num_rows_block, num_cols_block);
+  }
+
+  template<typename Scalar>
+  std::ostream& operator<<(std::ostream &os, const ResizableMatrix<Scalar> &m) {
+    os << "memory size1: " << m.size1() << std::endl;
+    os << "memory size2: " << m.size2() << std::endl;
+    os << m.block() << std::endl;
+    return os;
+  }
 }
 
 namespace std {
@@ -321,35 +392,4 @@ namespace std {
   }
 }
 
-//some functions for compatibility
-template<typename Scalar>
-ALPS_STRONG_INLINE
-int num_cols(const alps::ResizableMatrix<Scalar>& m) {
-  return m.size1();
-}
 
-template<typename Scalar>
-ALPS_STRONG_INLINE
-int num_rows(const alps::ResizableMatrix<Scalar>& m) {
-  return m.size2();
-}
-
-template<typename Scalar>
-ALPS_STRONG_INLINE
-void gemm(const alps::ResizableMatrix<Scalar>& a, const alps::ResizableMatrix<Scalar>& b, alps::ResizableMatrix<Scalar>& c) {
-  c = a*b;
-}
-
-template<typename Scalar>
-ALPS_STRONG_INLINE
-alps::ResizableMatrix<Scalar> safe_inverse(const alps::ResizableMatrix<Scalar>& m) {
-  alps::ResizableMatrix<Scalar> inv_m(m);
-  inv_m.invert();
-  return inv_m;
-}
-
-template<typename Scalar>
-ALPS_STRONG_INLINE
-Scalar safe_determinant(const alps::ResizableMatrix<Scalar>& m) {
-  return m.determinant();
-}
