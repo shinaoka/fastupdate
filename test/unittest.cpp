@@ -1,34 +1,4 @@
-#include <algorithm>
-#include "gtest/gtest.h"
-
-
-#include "gtest.hpp"
-
-TEST(LegendreMeasurement, Tnl)
-{
-    const int n_matsubara = 1;
-    const int n_legendre = 1000;
-    LegendreTransformer trans(n_matsubara, n_legendre);
-
-    //Check if norm is conserved
-    for (std::size_t im=0; im<n_matsubara; ++im) {
-        std::complex<double> tmp;
-        for (std::size_t il=0; il<n_legendre; ++il) {
-            tmp += trans.Tnl()(im,il)*std::conj(trans.Tnl()(im,il));
-        }
-        ASSERT_TRUE(std::abs(tmp-1.)<1E-5) << "norm is not conserved = " << tmp;
-    }
-
-    std::vector<double> legendre_values(n_legendre);
-    const double xval = 0.2;
-    trans.compute_legendre(xval, legendre_values);
-    ASSERT_TRUE(std::abs(legendre_values[1]-xval)<1E-8);
-    for (std::size_t il=1; il<n_legendre-1; ++il) {
-        double left_val = (il+1)*legendre_values[il+1];
-        double right_val = (2*il+1)*xval*legendre_values[il]-il*legendre_values[il-1];
-        ASSERT_TRUE(std::abs(left_val-right_val)<1E-8);
-    }
-}
+#include "unittest.hpp"
 
 TEST(FastUpdate, BlockMatrixAdd)
 {
@@ -57,7 +27,7 @@ TEST(FastUpdate, BlockMatrixAdd)
             randomize_matrix(C, 300);
             randomize_matrix(D, 400);
             if (N>0) {
-                invA = alps::numeric::inverse(A);
+                invA = inverse(A);
             } else {
                 invA.resize(0,0);
             }
@@ -528,7 +498,7 @@ TEST(FastUpdate, ReplaceDiagonalElements) {
     const T det_rat_fast = compute_det_ratio_replace_diaognal_elements(invA_old, m, pos, elems_diff, true);
     ASSERT_TRUE(std::abs((det_rat-det_rat_fast)/det_rat)<1E-8);
 
-    /* inverse matrix update */
+    // inverse matrix update
     matrix_t invA_new = inverse(A_new);
     matrix_t invA_new_fast = invA_old;
     compute_det_ratio_replace_diaognal_elements(invA_new_fast, m, pos, elems_diff, false);

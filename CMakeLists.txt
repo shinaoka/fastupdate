@@ -1,9 +1,9 @@
-### gftools cmake configuration
+### fastupdate cmake configuration
 
 cmake_minimum_required (VERSION 2.8.12)
 
-# gftools use only CXX compiler 
-project (ALPSCoreGF CXX)
+# use only CXX compiler
+project (FastUpdate CXX)
 
 # find additional cmake module in cmake dir
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
@@ -18,7 +18,9 @@ message(STATUS "Redifine CMAKE_INSTALL_PREFIX if you wish to change install loca
 ### Dependencies
 find_package(Boost 1.55.0 REQUIRED)
 find_package(Eigen3 REQUIRED)
-include_directories("fastupdate/include")
+
+#include directories
+set(FASTUPDATE_LIBRARY_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} "fastupdate/include" "test") #rest taken care of by libraries dependencies
 
 #unset(LINK_ALL)
 #list(APPEND LINK_ALL ${ALPSCore_LIBRARIES})
@@ -31,7 +33,9 @@ include_directories("fastupdate/include")
 #testing setup
 option(Testing "Enable testing" ON)
 include(EnableGtests) #defined in ./cmake
-include_directories("test")
+#include_directories("test")
+message(${FASTUPDATE_LIBRARY_INCLUDE_DIRS})
+include_directories(${FASTUPDATE_LIBRARY_INCLUDE_DIRS})
 #list(APPEND LINK_ALL hyb)
 
 #testing source files

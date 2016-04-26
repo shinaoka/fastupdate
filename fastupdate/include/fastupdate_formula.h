@@ -1,16 +1,10 @@
+#pragma once
+
+//#include <boost/timer/timer.hpp>
+//#include <alps/numeric/matrix.hpp>
+//#include <alps/numeric/matrix/algorithms.hpp>
 //
-// Created by H. Shinaoka on 2015/10/28.
-//
-
-#ifndef IMPSOLVER_FASTUPDATE_FORMULA_H
-#define IMPSOLVER_FASTUPDATE_FORMULA_H
-
-#include <boost/timer/timer.hpp>
-
-#include <alps/numeric/matrix.hpp>
-#include <alps/numeric/matrix/algorithms.hpp>
-
-#include "util.h"
+//#include "util.h"
 #include "resizable_matrix.hpp"
 
 //Eigen::Block<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> >
@@ -19,8 +13,6 @@
 template<class T, class MAT>
 T
 compute_det_ratio_up(const MAT &B, const MAT &C, const MAT &D, const alps::ResizableMatrix<T> &invA) {
-    //typedef alps::ResizableMatrix<T> matrix_t;
-
     const size_t N = num_rows(invA);
     const size_t M = num_rows(D);
 
@@ -46,7 +38,8 @@ compute_inverse_matrix_up(
         const alps::ResizableMatrix<T> &invA,
         MAT &E, MAT &F, MAT &G, MAT &H) {
     //typedef alps::ResizableMatrix<T> matrix_t;
-    typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
+
+    typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
 
     const size_t N = num_rows(invA);
     const size_t M = num_rows(D);
@@ -95,8 +88,8 @@ compute_inverse_matrix_up2(
         alps::ResizableMatrix<T> &invBigMat) {
     //using namespace alps::numeric;
     //typedef matrix<T> matrix_t;
-    typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
-    typedef Eigen::Block<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> > block_t;
+    typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
+    typedef Eigen::Block<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> > block_t;
 
     const int N = num_rows(invA);
     const int M = num_rows(D);
@@ -123,14 +116,14 @@ compute_inverse_matrix_up2(
         //gemm(C, invA, C_invA);
         //gemm(C_invA, B, C_invA_B);
         //H = safe_inverse(D - C_invA_B);
-        const matrix_t C_invA = C*invA;
-        H = (D-C_invA*B).invert();
+        const eigen_matrix_t C_invA = C*invA;
+        const eigen_matrix_t H = (D-C_invA*B).invert();
 
         //compute F
         //gemm(invA, B, invA_B);
         //mygemm((T)-1.0, invA_B, H, (T)0.0, F);
-        const matrix_t invA_B = invA*B;
-        F = -invA_B*H;
+        const eigen_matrix_t invA_B = invA*B;
+        const eigen_matrix_t F = -invA_B*H;
 
         //submatrix views to invBigMat
         invBigMat.destructive_resize(N + M, N + M);//this may destroy the contents of invA as well
@@ -158,13 +151,15 @@ compute_inverse_matrix_up2(
     }
 }
 
+
+/*
+
 template<class T, class I>
 T
 compute_det_ratio_down(
         const I num_rows_cols_removed,
         const std::vector<I>& rows_cols_removed,
         const alps::ResizableMatrix<T>& invBigMat) {
-    using namespace alps::numeric;
     typedef matrix<T> matrix_t;
 
     const I NpM = num_rows(invBigMat);
@@ -300,38 +295,6 @@ compute_imverse_matrix_replace_row(alps::ResizableMatrix<T>& M, const alps::Resi
     std::swap(M, new_M);
 }
 
-//Implementing Eq. (84) in Otsuki and Kusunose
-// Not optimized yet.
-/*
-template<class T>
-T
-compute_det_ratio_replace_row_col(const alps::ResizableMatrix<T>& M, const alps::ResizableMatrix<T> Dr, const alps::ResizableMatrix<T> Dc, int m) {
-    typedef alps::ResizableMatrix<T> matrix_t;
-    const int N = num_cols(M);
-    assert(num_rows(M)==N);
-    assert(num_rows(Dr)==1);
-    assert(num_cols(Dr)==N);
-    assert(num_rows(Dc)==N);
-    assert(num_cols(Dc)==1);
-    assert(Dr(0,m)==Dc(m,0));
-
-    T lambda = 0;
-    {
-        T sum_r = 0, sum_c = 0;
-        for (int i=0; i<N; ++i) {
-            sum_r += Dr(0,i)*M(i,m);
-        }
-        for (int i=0; i<N; ++i) {
-            sum_c += Dc(i,0)*M(m,i);
-        }
-        lambda += sum_r*sum_c;
-    }
-    lambda += -M(m,m)*mygemm(mygemm(Dr,M),Dc)(0,0) + Dr(0,m)*M(m,m);
-
-    return lambda;
-}
-*/
-
 template<class T>
 T
 compute_inverse_matrix_replace_row_col(alps::ResizableMatrix<T>& invG, const alps::ResizableMatrix<T> Dr, const alps::ResizableMatrix<T> Dc, int m,
@@ -407,24 +370,6 @@ compute_inverse_matrix_replace_row_col(alps::ResizableMatrix<T>& invG, const alp
 
         return lambda;
     }
-
-/*
-    matrix_t L(N,1,0.), R(1,N,0.);
-    alps::numeric::gemm(M, Dc, L);
-    alps::numeric::gemm(Dr, M, R);
-
-    matrix_t M_new(N,N);
-    const double coeff = -1/lambda;
-    const double Mmm = M(m,m);
-    for(int j=0; j<N; ++j) {
-        for(int i=0; i<N; ++i) {
-            M_new(i,j) = coeff*(Mmm*L(i,0)-L(m,0)*M(i,m) + Mmm*R(0,j)-M(m,j)*R(0,m));
-        }
-    }
-    M_new(m,m) += Mmm/lambda;
-    M.swap(M_new);*/
-
-
 }
 
 //Assuming the intermediate state is singular, one replaces a row and a column.
@@ -891,5 +836,5 @@ compute_det_ratio_replace_diaognal_elements(alps::ResizableMatrix<T>& invBigMat,
 
     return det_rat;
 }
-#endif //IMPSOLVER_FASTUPDATE_FORMULA_H
 
+*/
