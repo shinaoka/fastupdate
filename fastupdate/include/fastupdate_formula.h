@@ -1,3 +1,8 @@
+/**
+ * Fast-update formula based on block matrix representation
+ * Copyright (C) 2016 by Hiroshi Shinaoka <h.shinaoka@gmail.com>
+ *
+ */
 #pragma once
 
 #include "resizable_matrix.hpp"
@@ -13,10 +18,23 @@ inline int num_rows(const Eigen::MatrixBase<Derived>& m) {
 }
 
 
-//Implementing equations in Appendix B.1.1 of Luitz's thesis
-template<typename T, typename MAT, typename MAT2>
-T
-compute_det_ratio_up(const MAT &B, const MAT &C, const MAT &D, const MAT2& invA) {
+/**
+ * Compute the determinant ratio with addition rows and cols
+ * We implement equations in Appendix B.1.1 of Luitz's thesis.
+ * https://opus.bibliothek.uni-wuerzburg.de/files/6408/thesis_luitz.pdf
+ *
+ * @param B right top block of the new matrix
+ * @param C left bottom block of the new matrix
+ * @param D right bottom block of the new matrix
+ * @param invA inverse of the currrent matrix
+ */
+template<typename Scalar, typename Derived>
+Scalar
+compute_det_ratio_up(
+  const Eigen::MatrixBase<Derived> &B,
+  const Eigen::MatrixBase<Derived> &C,
+  const Eigen::MatrixBase<Derived> &D,
+  const alps::ResizableMatrix<Scalar>& invA) {
   const size_t N = num_rows(invA);
   const size_t M = num_rows(D);
 
@@ -35,71 +53,25 @@ compute_det_ratio_up(const MAT &B, const MAT &C, const MAT &D, const MAT2& invA)
   }
 }
 
-/*
-template<typename ReturnType, typename Derived>
-ReturnType
+/**
+ * Update the inverse matrix by adding rows and cols
+ * We implement equations in Appendix B.1.1 of Luitz's thesis.
+ * https://opus.bibliothek.uni-wuerzburg.de/files/6408/thesis_luitz.pdf
+ *
+ * @param B right top block of the new matrix
+ * @param C left bottom block of the new matrix
+ * @param D right bottom block of the new matrix
+ * @param invA inverse of the currrent matrix. invA is resized automatically.
+ */
+template<typename Scalar, typename Derived>
+Scalar
 compute_inverse_matrix_up(
   const Eigen::MatrixBase<Derived> &B,
   const Eigen::MatrixBase<Derived> &C,
   const Eigen::MatrixBase<Derived> &D,
-  const Eigen::MatrixBase<Derived> &invA,
-  Eigen::MatrixBase<Derived> &E,
-  Eigen::MatrixBase<Derived> &F,
-  Eigen::MatrixBase<Derived> &G,
-  Eigen::MatrixBase<Derived> &H) {
-
-  typedef ReturnType Scalar;
-  typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> eigen_matrix_t;
-
-  const size_t N = num_rows(invA);
-  const size_t M = num_rows(D);
-
-  assert(M>0);
-
-  assert(num_rows(invA)==num_cols(invA));
-  assert(num_rows(B)==N && num_cols(B)==M);
-  assert(num_rows(C)==M && num_cols(C)==N);
-  assert(num_rows(D)==M && num_cols(D)==M);
-
-  //compute H
-  if (N==0) {
-    H = D.inverse();
-    E.resize(0,0);
-    F.resize(0,M);
-    G.resize(M,0);
-
-    return 1./H.determinant();
-  } else {
-    //compute H
-    const eigen_matrix_t C_invA = C*invA;
-    H = (D - C_invA*B).inverse();
-
-    //compute G
-    G = -H*C_invA;
-
-    //compute F
-    const eigen_matrix_t invA_B = invA*B;
-    F = -invA_B*H;
-
-    //compute E
-    E = invA-invA_B*G;
-
-    return 1./H.determinant();
-  }
-}
-*/
-
-//Note: invA and invBigMat can point to the same matrix object.
-// invBigMat is resized automatically.
-template<typename T, typename Derived>
-T
-compute_inverse_matrix_up(
-  const Eigen::MatrixBase<Derived> &B,
-  const Eigen::MatrixBase<Derived> &C,
-  const Eigen::MatrixBase<Derived> &D,
-  alps::ResizableMatrix<T> &invA)
+  alps::ResizableMatrix<Scalar> &invA)
 {
-  typedef Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
+  typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
   typedef Eigen::Block<eigen_matrix_t> block_t;
 
   const int N = num_rows(invA);
@@ -116,6 +88,9 @@ compute_inverse_matrix_up(
     invA = D.inverse();
     return D.determinant();
   } else {
+    //I don't know how expensive to allocate temporary objects C_invA, H, invA_B, F.
+    //We could keep them as static objects or members of a class.
+
     //compute H
     const eigen_matrix_t C_invA = C*invA.block();
     const eigen_matrix_t H = (D-C_invA*B).inverse();
@@ -124,7 +99,7 @@ compute_inverse_matrix_up(
     const eigen_matrix_t invA_B = invA.block()*B;
     const eigen_matrix_t F = -invA_B*H;
 
-    invA.conservative_resize(N+M,N+M);//this keep the contents of invA
+    invA.conservative_resize(N+M,N+M);//this keeps the contents in the left corner of invA
 
     //compute G
     invA.block(N,0,M,N) = -H*C_invA;
@@ -139,150 +114,136 @@ compute_inverse_matrix_up(
   }
 }
 
-
-/*
-
-template<class T, class I>
-T
+/**
+ * Compute the determinant ratio for the removal of rows and cols
+ * We implement equations in Appendix B.1.1 of Luitz's thesis.
+ * https://opus.bibliothek.uni-wuerzburg.de/files/6408/thesis_luitz.pdf
+ *
+ * For a certain matrix G, its inverse is denoted by G^{-1}
+ * Let us consider removing several rows and columns in G.
+ * The resultant matrix is G'.
+ * As mentioned below, some of rows and columns in G' are exchanged.
+ * In this function, we compute |G'|/|G|, which includes the sign change due to the permutations of rows and columns.
+ * Note that swapping rows/columns in a matrix corresponds to
+ * swapping the corresponding columns/rows in its inverse, respectively.
+ * (G: row <=> G^-1: column)
+ *
+ * @param num_rows_cols_removed number of rows and cols to be removed in G
+ * @param rows_removed positions of rows to be removed in G (not G^{-1}). The first num_rows_cols_removed elements are referred.
+ * @param cols_removed positions of cols to be removed in G (not G^{-1}). The first num_rows_cols_removed elements are referred.
+ * @param invBigMat inverse of the currrent matrix: G^{-1}
+ */
+template<class Scalar>
+Scalar
 compute_det_ratio_down(
-        const I num_rows_cols_removed,
-        const std::vector<I>& rows_cols_removed,
-        const alps::ResizableMatrix<T>& invBigMat) {
-    typedef matrix<T> matrix_t;
+        const int num_rows_cols_removed,
+        const std::vector<int>& rows_removed,
+        const std::vector<int>& cols_removed,
+        const alps::ResizableMatrix<Scalar>& invBigMat)
+{
+  typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
 
-    const I NpM = num_rows(invBigMat);
-    const I M = num_rows_cols_removed;
-    assert(num_cols(invBigMat)==NpM);
-    assert(rows_cols_removed.size()>=M);
-    assert(M>0);
+  const int NpM = num_rows(invBigMat);
+  const int M = num_rows_cols_removed;
+  assert(num_cols(invBigMat)==NpM);
+  assert(rows_removed.size()>=M);
+  assert(M>0);
 
-    matrix_t H(M,M);
-    for (I j=0; j<M; ++j) {
-        for (I i=0; i<M; ++i) {
-            //std::cout << " Debug "  << rows_cols_removed[i] << " " << M << " " << NpM << std::endl;
-            assert(rows_cols_removed[i]<NpM);
-            assert(rows_cols_removed[j]<NpM);
-            H(i,j) = invBigMat(rows_cols_removed[i], rows_cols_removed[j]);
-        }
+  //Note: if rows_removed==cols_removed, there is no sign change.
+  // Thus, we count the difference from this: perm;
+  eigen_matrix_t H(M,M);
+  unsigned long perm = 0;
+  for (int j=0; j<M; ++j) {
+    perm += std::abs(rows_removed[j]-cols_removed[j]);
+    for (int i=0; i<M; ++i) {
+      assert(rows_cols_removed[i]<NpM);
+      assert(rows_cols_removed[j]<NpM);
+      H(i,j) = invBigMat(rows_cols_removed[i], rows_cols_removed[j]);
     }
-    return safe_determinant(H);
+  }
+
+  return perm%2==0 ? H.determinant() : -H.determinant();
 }
 
-//Note: invBigMat will be shrinked.
-template<class T, class I>
-T
+/**
+ * Update the inverse matrix for the removal of rows and cols
+ * We implement equations in Appendix B.1.1 of Luitz's thesis.
+ * https://opus.bibliothek.uni-wuerzburg.de/files/6408/thesis_luitz.pdf
+ *
+ * The actual procedure is the following.
+ * First, we move all rows and cols to be removed to the last (step1).
+ * Then, we remove them (step2).
+ * On exit, the positions of some remaining rows and cols are exchanged in step1.
+ *
+ * @param num_rows_cols_removed number of rows and cols to be removed in G
+ * @param rows_removed positions of rows to be removed in G (not G^{-1}). The first num_rows_cols_removed elements are referred.
+ * @param cols_removed positions of cols to be removed in G (not G^{-1}). The first num_rows_cols_removed elements are referred.
+ * @param invBigMat inverse of the currrent matrix (will be resized and updated)
+ * @param swapped_rows a list of pairs of rows in G swapped in step 1
+ * @param swapped_cols a list of pairs of cols in G swapped in step 1
+ */
+template<class Scalar>
+void
 compute_inverse_matrix_down(
-    const I num_rows_cols_removed,
-    const std::vector<I>& rows_cols_removed,
-    alps::ResizableMatrix<T>& invBigMat,
-    std::vector<std::pair<I,I> >& swap_list
-    ) {
-    using namespace alps::numeric;
-    typedef matrix<T> matrix_t;
+    const int num_rows_cols_removed,
+    const std::vector<int>& rows_removed,
+    const std::vector<int>& cols_removed,
+    alps::ResizableMatrix<Scalar>& invBigMat,
+    std::vector<std::pair<int,int> >& swapped_rows,
+    std::vector<std::pair<int,int> >& swapped_cols
+    )
+{
+  typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> eigen_matrix_t;
 
-    static matrix_t H, invH_G, F_invH_G;
+  const int NpM = num_rows(invBigMat);
+  const int M = num_rows_cols_removed;
+  const int N = NpM-M;
+  assert(num_cols(invBigMat)==NpM);
+  assert(rows_cols_removed.size()>=M);
+  assert(M>0);
+  assert(NpM>=M);
 
-    const I NpM = num_rows(invBigMat);
-    const I M = num_rows_cols_removed;
-    const I N = NpM-M;
-    assert(num_cols(invBigMat)==NpM);
-    assert(rows_cols_removed.size()>=M);
-    assert(M>0);
-    assert(NpM>=M);
+  if (NpM<M) {
+    throw std::logic_error("N should not be negative!");
+  }
 
-    if (NpM<M) {
-        throw std::logic_error("N should not be negative!");
-    }
-
-    if (M==0) {
-        throw std::logic_error("M should be larger than 0!");
-    }
+  if (M==0) {
+    throw std::logic_error("M should be larger than 0!");
+  }
 
 #ifndef NDEBUG
-    //make sure the indices are in ascending order.
-    for (I i=0; i<M-1; ++i) {
-        assert(rows_cols_removed[i]<rows_cols_removed[i+1]);
-    }
+  //make sure the indices are in ascending order.
+  for (int idel=0; idel<M-1; ++idel) {
+    assert(rows_cols_removed[idel]<rows_cols_removed[idel+1]);
+  }
 #endif
 
-    //move rows and cols to be removed to the end.
-    swap_list.resize(M);
-    for (I i=0; i<M; ++i) {
-        invBigMat.swap_cols(rows_cols_removed[M-1-i], NpM-1-i);
-        invBigMat.swap_rows(rows_cols_removed[M-1-i], NpM-1-i);
-        swap_list[i] = std::pair<I,I>(rows_cols_removed[M-1-i], NpM-1-i);
-    }
+  //Step 1
+  //move rows and cols to be removed to the end.
+  swapped_rows.resize(M);
+  swapped_cols.resize(M);
+  for (int idel=0; idel<M; ++idel) {
+    //Note: If we swap two rows in G, this corresponds to swapping the corresponding COLUMNS in G^{-1}
+    invBigMat.swap_cols(rows_removed[M-1-idel], NpM-1-idel);
+    invBigMat.swap_rows(cols_removed[M-1-idel], NpM-1-idel);
+    swapped_rows[idel] = std::pair<int,int>(rows_removed[M-1-idel], NpM-1-idel);
+    swapped_cols[idel] = std::pair<int,int>(cols_removed[M-1-idel], NpM-1-idel);
+  }
 
-    if (N==0) {
-        matrix_t H(invBigMat);
-        invBigMat.resize(0,0);
-        return safe_determinant(H);
-    } else {
-        H.destructive_resize(M, M);
-        invH_G.destructive_resize(M, N);
-        F_invH_G.destructive_resize(N, N);
-
-        submatrix_view<T> E_view(invBigMat, 0, 0, N, N);
-        submatrix_view<T> F_view(invBigMat, 0, N, N, M);
-        submatrix_view<T> G_view(invBigMat, N, 0, M, N);
-        copy_block(invBigMat, N, N, H, 0, 0, M, M);//we need to copy a submatrix to H because save_determinant() does not support a matrix view.
-
-        gemm(safe_inverse(H), G_view, invH_G);
-        mygemm((T)-1.0, F_view, invH_G, (T)1.0, E_view);
-
-        invBigMat.resize(N, N);
-        return safe_determinant(H);
-    }
+  //Step 2
+  if (N==0) {
+    invBigMat.resize(0,0);
+  } else {
+    //E -= F*H^{-1}*G
+    invBigMat.block(0,0,N,N) -=
+      invBigmat.block(0,N,N,M)*
+      invBigMat.block(N,N,M,M).inverse()*
+      invBigMat.block(N,0,M,N);
+    invBigMat.conservative_resize(N, N);
+  }
 }
 
-//Implementing Eq. (80) in Otsuki and Kusunose
-template<class T>
-T
-compute_det_ratio_replace_row(const alps::ResizableMatrix<T>& M, const alps::ResizableMatrix<T> Dr, int m) {
-    assert(num_cols(M)==num_rows(M));
-    assert(num_rows(Dr)==1);
-    assert(num_cols(Dr)==num_rows(M));
-    const int N = num_cols(M);
-
-    T lambda = 0;
-    for (int i=0; i<N; ++i) {
-        lambda += Dr(0,i)*M(i,m);
-    }
-    return lambda;
-}
-
-//Implementing Eq. (81) in Otsuki and Kusunose
-template<class T>
-T
-compute_imverse_matrix_replace_row(alps::ResizableMatrix<T>& M, const alps::ResizableMatrix<T> Dr, int m) {
-    assert(num_cols(M) == num_rows(M));
-    assert(num_rows(Dr) == 1);
-    assert(num_cols(Dr) == num_rows(M));
-    const int N = num_cols(M);
-
-    T lambda = 0;
-    for (int i=0; i<N; ++i) {
-        lambda += Dr(0,i)*M(i,m);
-    }
-    const T inv_lambda = 1/lambda;
-
-    alps::ResizableMatrix<T> R(1,N,0);
-    gemm(Dr,M,R);
-    R *= -inv_lambda;
-    R(0,m) = -1;
-
-    alps::ResizableMatrix<T> new_M(N,N);
-    for (int j=0; j<N; ++j) {
-        for (int i=0; i<N; ++i) {
-            new_M(i,j) = M(i,m)*R(0,j)-M(i,j)*R(0,m);
-        }
-    }
-    for (int i=0; i<N; ++i) {
-        new_M(i,m) += M(i,m)*inv_lambda;
-    }
-    std::swap(M, new_M);
-}
-
+/*
 template<class T>
 T
 compute_inverse_matrix_replace_row_col(alps::ResizableMatrix<T>& invG, const alps::ResizableMatrix<T> Dr, const alps::ResizableMatrix<T> Dc, int m,
